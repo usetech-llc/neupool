@@ -1,0 +1,3 @@
+[submodule "platform-contracts"]
+	path = platform-contracts
+	url = https://github.com/Neufund/platform-contracts

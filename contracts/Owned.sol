@@ -1,4 +1,4 @@
-pragma solidity 0.4.18;
+pragma solidity 0.4.25;
 
 contract Owned {
     address public owner;
@@ -10,7 +10,7 @@ contract Owned {
     *
     *  Sets contract owner to address of constructor caller
     */
-    function Owned() public {
+    constructor() public {
         owner = msg.sender;
     }
 
@@ -29,7 +29,7 @@ contract Owned {
     function changeOwner(address newOwner) onlyOwner public {
         require(newOwner != address(0));
         require(newOwner != owner);
-        OwnershipTransferred(owner, newOwner);
+        emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
     }
 }

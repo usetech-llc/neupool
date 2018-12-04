@@ -1,20 +1,36 @@
 pragma solidity 0.4.25;
 import './Owned.sol';
-import './Dto/Contribution.sol';
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Standards/IERC223Callback.sol';
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/ETO/IETOCommitment.sol'
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Universe.sol'
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Math.sol';
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Neumark.sol';
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Company/EquityToken.sol';
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/PaymentTokens/EuroToken.sol';
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Identity/IIdentityRegistry.sol';
+import '../platform-contracts/contracts/Standards/IERC223Callback.sol';
+import '../platform-contracts/contracts/ETO/IETOCommitment.sol';
+import '../platform-contracts/contracts/ETO/IETOCommitmentStates.sol';
+import '../platform-contracts/contracts/Universe.sol';
+import '../platform-contracts/contracts/Math.sol';
+import '../platform-contracts/contracts/Neumark.sol';
+import '../platform-contracts/contracts/Company/EquityToken.sol';
+import '../platform-contracts/contracts/PaymentTokens/EuroToken.sol';
+import '../platform-contracts/contracts/Identity/IIdentityRegistry.sol';
 
 contract InvestmentPool is
     Owned,
     IERC223Callback,
-    Math
+    Math,
+    IdentityRecord
 {
+    struct Contribution {
+
+        // Amount of contribution currency received from contributor
+        uint96 AmountReceived;
+
+        // Amount committed to ETO
+        uint96 AmountCommitted;
+
+        // Reward is claimed flag
+        bool RewardClaimed;
+
+        // Amount is refunded flag
+        bool Refunded;
+    }
+
     /* All contributions and rewards */
     mapping (address => Contribution) private _contributions;
     address[] private _batchContributors;
@@ -42,7 +58,7 @@ contract InvestmentPool is
     *  Constructor
     *
     */
-    function InvestmentPool(address universeAddr, address etoAddress) public {
+    constructor(address universeAddr, address etoAddress) public {
         owner = msg.sender;
 
         _commissionBeneficiary = msg.sender;
@@ -108,10 +124,10 @@ contract InvestmentPool is
         returns (bool validState)
     {
         IETOCommitment etoObject = IETOCommitment(_etoAddress);
-        validState = (etoObject.state() == IETOCommitment.ETOState.Public);
+        validState = (etoObject.state() == IETOCommitmentStates.ETOState.Public);
     }
 
-    function tokenFallback(address wallet, uint256 amount, bytes data)
+    function tokenFallback(address wallet, uint256 amount, bytes)
         public
     {
         // We should only receive tokens from valid token addresses.
@@ -140,8 +156,9 @@ contract InvestmentPool is
                 require(amount >= MinimumCap);
 
                 // Check that investor passed KYC
-                IIdentityRegistry ir = _neuFundUniverse.identityRegistry();
-                IdentityClaims memory investorStatus = ir.deserializeClaims(ir.getClaims(wallet));
+                Universe universe = Universe(_neuFundUniverse);
+                IIdentityRegistry ir = IIdentityRegistry(universe.identityRegistry());
+                IdentityClaims memory investorStatus = deserializeClaims(ir.getClaims(wallet));
                 require(investorStatus.isVerified && !investorStatus.accountFrozen);
 
                 // Calculate and validate resulting amount
@@ -154,7 +171,7 @@ contract InvestmentPool is
                 _batchContributors.push(wallet);
                 _totalContribution += amount;
                 _uncommittedContribution += amount;
-                cont.AmountReceived = newAmount;
+                cont.AmountReceived = uint96(newAmount);
             }
 
             // This is a refund from ETO, just accept balance and do nothing
@@ -180,15 +197,15 @@ contract InvestmentPool is
         require(isContributionAllowed());
 
         // Reserve commission
-        uint250 commission = proportion(_uncommittedContribution, _commissionRatePromille, 1000);
+        uint256 commission = proportion(_uncommittedContribution, _commissionRatePromille, 1000);
         _totalCommission += commission;
         _uncommittedContribution -= commission;
 
         // Mark all batch contributos as committed and clear batch contributors
         // Contributos may appear multiple times in _batchContributors, and that's
         // OK because we only mark funds as committed, without adding balances.
-        uint64 batchCount = _batchContributors.length;
-        for (uint64 i=0; i<batchCount; i++)
+        uint256 batchCount = _batchContributors.length;
+        for (uint256 i=0; i<batchCount; i++)
         {
             Contribution storage cont = _contributions[_batchContributors[i]];
             cont.AmountCommitted = cont.AmountReceived;
@@ -207,7 +224,7 @@ contract InvestmentPool is
     {
         // ETO should be in Claim state
         IETOCommitment etoObject = IETOCommitment(_etoAddress);
-        require(etoObject.state() == IETOCommitment.ETOState.Claim);
+        require(etoObject.state() == IETOCommitmentStates.ETOState.Claim);
 
         // Claim Equity and Neumarks
         etoObject.claim();
@@ -274,11 +291,11 @@ contract InvestmentPool is
     {
         // ETO is in Refund state
         IETOCommitment etoObject = IETOCommitment(_etoAddress);
-        bool refundState = etoObject.state() == IETOCommitment.ETOState.Refund;
+        bool refundState = etoObject.state() == IETOCommitmentStates.ETOState.Refund;
 
         // ETO is past Signing state
-        bool pastSigning = (etoObject.state() == IETOCommitment.ETOState.Claim) ||
-            (etoObject.state() == IETOCommitment.ETOState.Payout)
+        bool pastSigning = (etoObject.state() == IETOCommitmentStates.ETOState.Claim) ||
+            (etoObject.state() == IETOCommitmentStates.ETOState.Payout);
 
         require(refundState || pastSigning);
 
@@ -292,7 +309,7 @@ contract InvestmentPool is
             // Claim refund from ETO if not yet claimed
             if (!_claimedRefund)
             {
-                require(etoObject.refund());
+                etoObject.refund();
                 _claimedRefund = true;
             }
 
@@ -312,7 +329,7 @@ contract InvestmentPool is
         if (refundAmount > 0)
         {
             EuroToken paymentToken = EuroToken(_contributionTokenAddress);
-            paymentToken.transfer(msg.sender, (uint256)refundAmount, "");
+            paymentToken.transfer(msg.sender, refundAmount, "");
         }
     }
 
@@ -330,7 +347,7 @@ contract InvestmentPool is
     {
         // ETO should be in Payout state
         IETOCommitment etoObject = IETOCommitment(_etoAddress);
-        require(etoObject.state() == IETOCommitment.ETOState.Payout);
+        require(etoObject.state() == IETOCommitmentStates.ETOState.Payout);
 
         // Send commission to commission beneficiary
         EuroToken paymentToken = EuroToken(_contributionTokenAddress);
