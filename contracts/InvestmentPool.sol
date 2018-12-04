@@ -4,10 +4,10 @@ import './Dto/Contribution.sol';
 import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Standards/IERC223Callback.sol';
 import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/ETO/IETOCommitment.sol'
 import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Universe.sol'
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Math.sol;
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Neumark.sol;
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Company/EquityToken.sol;
-import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/PaymentTokens/EuroToken.sol;
+import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Math.sol';
+import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Neumark.sol';
+import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Company/EquityToken.sol';
+import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/PaymentTokens/EuroToken.sol';
 
 
 contract InvestmentPool is
@@ -17,6 +17,7 @@ contract InvestmentPool is
 {
     /* All contributions and rewards */
     mapping (address => Contribution) private _contributions;
+    address[] private _batchContributors;
     uint256 private _totalContribution;
     uint256 private _uncommittedContribution;
     uint256 private _totalNeuReward;
@@ -24,13 +25,14 @@ contract InvestmentPool is
     uint256 private _totalCommission;
 
     /* Investment Pool Parameters */
+    uint256 public MinimumCap = 10**20; // 100 tokens
     address private _neuFundUniverse;
     address private _etoAddress;
     address private _contributionTokenAddress;
     address private _neumarkTokenAddress;
     address private _equityTokenAddress;
     address private _commissionBeneficiary;
-    uint16 private _commissionRatePromille;
+    uint16 private _commissionRatePromille = 50;
 
     /* State */
     bool private _claimedRewards;
@@ -44,7 +46,6 @@ contract InvestmentPool is
         owner = msg.sender;
 
         _commissionBeneficiary = msg.sender;
-        _commissionRatePromille = 50;
 
         // Universe and ETO address
         _neuFundUniverse = universeAddr;
@@ -56,11 +57,6 @@ contract InvestmentPool is
         _contributionTokenAddress = address(universe.euroToken());
         _neumarkTokenAddress = address(universe.neumark());
         _equityTokenAddress = address(etoObject.equityToken());
-    }
-
-    modifier onlyPayloadSize(uint size) {
-        assert(msg.data.length >= size + 4);
-        _;
     }
 
     /**
@@ -121,34 +117,46 @@ contract InvestmentPool is
         // We should only receive tokens from valid token addresses.
         // 1. In case of contribution: From token, which ETO accepts and which it uses for defining min/max cap
         // 2. In case of payout: From said above, Equity token, or Neumark
+        // 3. In case of refund: From token, which ETO accepts. Funds will come from ETO address.
 
         bool contributionToken = _contributionTokenAddress == msg.sender;
         bool equityToken = _equityTokenAddress == msg.sender;
         bool neumarkToken = _neumarkTokenAddress == msg.sender;
         require(neumarkToken || equityToken || contributionToken);
 
-        // We received contribution
+        // We received either contribution or refund
         if (contributionToken)
         {
-            // ETO should be in Public stage
-            require(isContributionAllowed());
+            // This is a contribution
+            if (wallet != _etoAddress)
+            {
+                // ETO should be in Public stage
+                require(isContributionAllowed());
 
-            // Input validation
-            require(amount < 2 ** 90);
+                // Input validation
+                require(amount < 2 ** 90);
 
-            // Calculate and validate resulting amount
-            // wallet is investor address
-            Contribution storage cont = _contributions[wallet];
-            uint256 newAmount = cont.AmountReceived + amount;
-            require(newAmount < 2 ** 90);
+                // Enforce minimum cap
+                require(amount >= MinimumCap);
 
-            // Update contribution
-            cont.AmountReceived = newAmount;
-            _totalContribution += amount;
-            _uncommittedContribution += amount;
+                // Calculate and validate resulting amount
+                // wallet is investor address
+                Contribution storage cont = _contributions[wallet];
+                uint256 newAmount = cont.AmountReceived + amount;
+                require(newAmount < 2 ** 90);
+
+                // Update contribution
+                _batchContributors.push(wallet);
+                _totalContribution += amount;
+                _uncommittedContribution += amount;
+                cont.AmountReceived = newAmount;
+            }
+
+            // This is a refund from ETO, just accept balance and do nothing
+            //else {}
         }
 
-        // We received reward
+        // We received reward from ETO
         else if (neumarkToken)
         {
             _totalNeuReward += amount;
@@ -171,10 +179,20 @@ contract InvestmentPool is
         _totalCommission += commission;
         _uncommittedContribution -= commission;
 
+        // Mark all batch contributos as committed and clear batch contributors
+        // Contributos may appear multiple times in _batchContributors, and that's
+        // OK because we only mark funds as committed, without adding balances.
+        uint64 batchCount = _batchContributors.length;
+        for (uint64 i=0; i<batchCount; i++)
+        {
+            Contribution storage cont = _contributions[_batchContributors[i]];
+            cont.AmountCommitted = cont.AmountReceived;
+        }
+        delete _batchContributors;
+
         // Send funds to ETO
         EuroToken paymentToken = EuroToken(_contributionTokenAddress);
-        bytes data;
-        require(paymentToken.transfer(_etoAddress, _uncommittedContribution, data));
+        require(paymentToken.transfer(_etoAddress, _uncommittedContribution, ""));
         _uncommittedContribution = 0;
     }
 
@@ -191,6 +209,16 @@ contract InvestmentPool is
         _claimedRewards = true;
     }
 
+    /**
+    *  Method for claiming rewards by contributor
+    *
+    *  Can only be executed after rewards have been claimed by this IP contract
+    *  so funds are available. The available balances are not checked because
+    *  we rely on NeuFund's code to calculate proportion.
+    *
+    *  RewardClaimed flag is set before any token transfers to prevent out of
+    *  gas attack.
+    */
     function claimRewards()
         public
     {
@@ -199,11 +227,13 @@ contract InvestmentPool is
 
         // Calculate reward amounts
         Contribution storage cont = _contributions[msg.sender];
-        uint256 nmkReward = proportion(_totalNeuReward, cont.AmountReceived, _totalContribution);
-        uint256 equityReward = proportion(_totalEquityReward, cont.AmountReceived, _totalContribution);
+        uint256 nmkReward = proportion(_totalNeuReward, cont.AmountCommitted, _totalContribution);
+        uint256 equityReward = proportion(_totalEquityReward, cont.AmountCommitted, _totalContribution);
 
         // Transfer rewards
+        require(!cont.RewardClaimed); // Prevent double claims
         cont.RewardClaimed = true;
+
         Neumark neumarkToken = Neumark(_neumarkTokenAddress);
         EquityToken equityToken = EquityToken(_equityTokenAddress);
 
@@ -211,29 +241,74 @@ contract InvestmentPool is
         equityToken.distributeTokens(msg.sender, equityReward);
     }
 
-    function claimRefund(address etoAddr)
+    /**
+    *  Method for claiming refunds
+    *
+    *  Can run in two cases:
+    *    1. If ETO is in Refund state.
+    *
+    *       Refund must be first claimed by IP contract from ETO contract. Because
+    *       Refund is a terminal state, there is no better way to ensure that
+    *       funds are available for refund than to claim a refund in case if it has
+    *       not been claimed. The _claimedRefund flag is only set after a successful
+    *       refund.
+    *
+    *       IP commission amount is reset because once ETO is in Refund state,
+    *       it means that ETO has failed.
+    *
+    *    2. If ETO is in Claim or Payout state and there is a partial
+    *       batch that has not been committed to ETO, which is subject to refund.
+    *
+    *
+    *  In either case Refunded flag is set before actual transfers to prevent
+    *  out of gas attack
+    *
+    */
+    function claimRefund()
         public
     {
-        // ETO should be in Refund state
+        // ETO is in Refund state
         IETOCommitment etoObject = IETOCommitment(_etoAddress);
-        require(etoObject.state() == IETOCommitment.ETOState.Refund);
+        bool refundState = etoObject.state() == IETOCommitment.ETOState.Refund;
 
-        // Claim refund from ETO if not yet claimed
-        if (!_claimedRefund)
+        // ETO is past Signing state
+        bool pastSigning = (etoObject.state() == IETOCommitment.ETOState.Claim) ||
+            (etoObject.state() == IETOCommitment.ETOState.Payout)
+
+        require(refundState || pastSigning);
+
+        // Calculate refund amount
+        Contribution storage cont = _contributions[msg.sender];
+        require(!cont.Refunded); // Prevent double refunds
+        cont.Refunded = true;
+        uint96 refundAmount = 0;
+        if (refundState)
         {
-            require(etoObject.refund());
-            _claimedRefund = true;
+            // Claim refund from ETO if not yet claimed
+            if (!_claimedRefund)
+            {
+                require(etoObject.refund());
+                _claimedRefund = true;
+            }
+
+            // Set total commission to 0 because there will be no commission
+            _totalCommission = 0;
+
+            // This is a full refund
+            refundAmount = cont.AmountReceived;
+        }
+        else if (pastSigning)
+        {
+            // This is a partial refund
+            refundAmount = cont.AmountReceived - cont.AmountCommitted;
         }
 
-        // Set total commission to 0 because there will be no commission
-        _totalCommission = 0;
-
         // Send refund to this investor
-        Contribution storage cont = _contributions[msg.sender];
-        cont.Refunded = true;
-        EuroToken paymentToken = EuroToken(_contributionTokenAddress);
-        bytes data;
-        paymentToken.transfer(msg.sender, cont.AmountReceived, data);
+        if (refundAmount > 0)
+        {
+            EuroToken paymentToken = EuroToken(_contributionTokenAddress);
+            paymentToken.transfer(msg.sender, (uint256)refundAmount, "");
+        }
     }
 
     function distributeEtoRewards(address etoAddr, address[] contributorAddresses)
@@ -252,7 +327,7 @@ contract InvestmentPool is
         external
         onlyOwner
     {
-        require(newBeneficiary != 0x0);
+        require(newBeneficiary != address(0));
         _commissionBeneficiary = newBeneficiary;
     }
 
@@ -266,7 +341,6 @@ contract InvestmentPool is
 
         // Send commission to commission beneficiary
         EuroToken paymentToken = EuroToken(_contributionTokenAddress);
-        bytes data;
-        paymentToken.transfer(_commissionBeneficiary, _totalCommission, data);
+        paymentToken.transfer(_commissionBeneficiary, _totalCommission, "");
     }
 }
