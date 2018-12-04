@@ -87,6 +87,9 @@ contract InvestmentPool is
     function() public {
     }
 
+    /**
+    *  Method for getting contributions totals
+    */
     function getSummary()
         public
         view
@@ -101,6 +104,9 @@ contract InvestmentPool is
         );
     }
 
+    /**
+    *  Method for getting individual contribution for investor by their address
+    */
     function getContribution()
         public
         view
@@ -127,6 +133,15 @@ contract InvestmentPool is
         validState = (etoObject.state() == IETOCommitmentStates.ETOState.Public);
     }
 
+    /**
+    *  Implementation of ERC223 callback.
+    *
+    *  This is called when this contract receives ERC223 tokens, i.e. Neumark,
+    *  Equity, EUR-T, or ETH-T.
+    *
+    * @param wallet - investor address or address of ETO in case of refund or reward
+    * @param amount - received amount
+    */
     function tokenFallback(address wallet, uint256 amount, bytes)
         public
     {
@@ -189,6 +204,10 @@ contract InvestmentPool is
         }
     }
 
+    /**
+    *  Method is used for committing batch of funds to ETO. May be called
+    *  multiple times per ETO.
+    */
     function commitFunds()
         external
         onlyOwner
@@ -218,6 +237,9 @@ contract InvestmentPool is
         _uncommittedContribution = 0;
     }
 
+    /**
+    *  Method is used to claim IP reward from ETO contract.
+    */
     function claimInvestmentPoolReward()
         external
         onlyOwner
@@ -333,6 +355,11 @@ contract InvestmentPool is
         }
     }
 
+    /**
+    *  Set address of commissions beneficiary
+    *
+    *  @param newBeneficiary - address of new beneficiary
+    */
     function setCommissionBeneficiary(address newBeneficiary)
         external
         onlyOwner
@@ -341,6 +368,9 @@ contract InvestmentPool is
         _commissionBeneficiary = newBeneficiary;
     }
 
+    /**
+    *  Transfer commission to beneficiary address
+    */
     function claimCommission()
         external
         onlyOwner
