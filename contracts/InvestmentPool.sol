@@ -8,7 +8,7 @@ import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/M
 import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Neumark.sol';
 import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Company/EquityToken.sol';
 import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/PaymentTokens/EuroToken.sol';
-
+import 'https://github.com/Neufund/platform-contracts/blob/force_eto/contracts/Identity/IIdentityRegistry.sol';
 
 contract InvestmentPool is
     Owned,
@@ -138,6 +138,11 @@ contract InvestmentPool is
 
                 // Enforce minimum cap
                 require(amount >= MinimumCap);
+
+                // Check that investor passed KYC
+                IIdentityRegistry ir = _neuFundUniverse.identityRegistry();
+                IdentityClaims memory investorStatus = ir.deserializeClaims(ir.getClaims(wallet));
+                require(investorStatus.isVerified && !investorStatus.accountFrozen);
 
                 // Calculate and validate resulting amount
                 // wallet is investor address
@@ -309,18 +314,6 @@ contract InvestmentPool is
             EuroToken paymentToken = EuroToken(_contributionTokenAddress);
             paymentToken.transfer(msg.sender, (uint256)refundAmount, "");
         }
-    }
-
-    function distributeEtoRewards(address etoAddr, address[] contributorAddresses)
-        external
-        onlyOwner
-    {
-    }
-
-    function refundMultiple(address etoAddr, address[] contributorAddresses)
-        external
-        onlyOwner
-    {
     }
 
     function setCommissionBeneficiary(address newBeneficiary)
