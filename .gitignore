@@ -3,3 +3,4 @@ build/
 node_modules/
 .node-xmlhttprequest-sync-*
 bundles/
+test/*.json

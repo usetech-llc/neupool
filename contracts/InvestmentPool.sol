@@ -8,6 +8,7 @@ import '../platform-contracts/contracts/Math.sol';
 import '../platform-contracts/contracts/Neumark.sol';
 import '../platform-contracts/contracts/Company/EquityToken.sol';
 import '../platform-contracts/contracts/PaymentTokens/EuroToken.sol';
+import '../platform-contracts/contracts/PaymentTokens/EuroTokenController.sol';
 import '../platform-contracts/contracts/Identity/IIdentityRegistry.sol';
 
 contract InvestmentPool is
@@ -139,12 +140,14 @@ contract InvestmentPool is
     *  This is called when this contract receives ERC223 tokens, i.e. Neumark,
     *  Equity, EUR-T, or ETH-T.
     *
-    * @param wallet - investor address or address of ETO in case of refund or reward
-    * @param amount - received amount
+    * param wallet - investor address or address of ETO in case of refund or reward
+    * param amount - received amount
     */
-    function tokenFallback(address wallet, uint256 amount, bytes)
+    //function tokenFallback(address wallet, uint256 amount, bytes)
+    function tokenFallback(address, uint256, bytes)
         public
     {
+      /*
         // We should only receive tokens from valid token addresses.
         // 1. In case of contribution: From token, which ETO accepts and which it uses for defining min/max cap
         // 2. In case of payout: From said above, Equity token, or Neumark
@@ -202,6 +205,7 @@ contract InvestmentPool is
         {
             _totalEquityReward += amount;
         }
+        */
     }
 
     /**
@@ -366,6 +370,20 @@ contract InvestmentPool is
     {
         require(newBeneficiary != address(0));
         _commissionBeneficiary = newBeneficiary;
+    }
+
+    /**
+    *  Get address of commissions beneficiary
+    *
+    */
+    function getCommissionBeneficiary()
+        public
+        view
+        returns (
+            address commissionBeneficiaryAddress
+        )
+    {
+        return _commissionBeneficiary;
     }
 
     /**
