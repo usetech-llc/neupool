@@ -46,6 +46,8 @@ Verify by calling both getContribution and getSummary methods
 #### Positive test. Sent EUR-T amount greater than IP minimum cap
 Verify by calling both getContribution and getSummary methods
 
+### Cannot contribute more than 2^90
+
 ### When batch size is reached, IP Owner should be able to send all received up to date funds to ETO contract
 #### Negative test. Commit when ETO is in Setup state
 #### Negative test. Commit when ETO is in Whitelist state

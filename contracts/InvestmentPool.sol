@@ -8,7 +8,6 @@ import '../platform-contracts/contracts/Math.sol';
 import '../platform-contracts/contracts/Neumark.sol';
 import '../platform-contracts/contracts/Company/EquityToken.sol';
 import '../platform-contracts/contracts/PaymentTokens/EuroToken.sol';
-import '../platform-contracts/contracts/PaymentTokens/EuroTokenController.sol';
 import '../platform-contracts/contracts/Identity/IIdentityRegistry.sol';
 
 contract InvestmentPool is
@@ -35,7 +34,7 @@ contract InvestmentPool is
     /* All contributions and rewards */
     mapping (address => Contribution) private _contributions;
     address[] private _batchContributors;
-    uint256 private _totalContribution;
+    uint256 public _totalContribution;
     uint256 private _uncommittedContribution;
     uint256 private _totalNeuReward;
     uint256 private _totalEquityReward;
@@ -54,6 +53,10 @@ contract InvestmentPool is
     /* State */
     bool private _claimedRewards;
     bool private _claimedRefund;
+
+    event Debug(address value1);
+    event Debug(uint256 value1);
+
 
     /**
     *  Constructor
@@ -140,19 +143,18 @@ contract InvestmentPool is
     *  This is called when this contract receives ERC223 tokens, i.e. Neumark,
     *  Equity, EUR-T, or ETH-T.
     *
-    * param wallet - investor address or address of ETO in case of refund or reward
-    * param amount - received amount
+    * @param wallet - investor address or address of ETO in case of refund or reward
+    * @param amount - received amount
     */
-    //function tokenFallback(address wallet, uint256 amount, bytes)
-    function tokenFallback(address, uint256, bytes)
+    function tokenFallback(address wallet, uint256 amount, bytes)
         public
     {
-      /*
+        emit Debug(amount);
+
         // We should only receive tokens from valid token addresses.
         // 1. In case of contribution: From token, which ETO accepts and which it uses for defining min/max cap
         // 2. In case of payout: From said above, Equity token, or Neumark
         // 3. In case of refund: From token, which ETO accepts. Funds will come from ETO address.
-
         bool contributionToken = _contributionTokenAddress == msg.sender;
         bool equityToken = _equityTokenAddress == msg.sender;
         bool neumarkToken = _neumarkTokenAddress == msg.sender;
@@ -165,25 +167,25 @@ contract InvestmentPool is
             if (wallet != _etoAddress)
             {
                 // ETO should be in Public stage
-                require(isContributionAllowed());
+                require(isContributionAllowed(), "Contribution is not allowed");
 
                 // Input validation
-                require(amount < 2 ** 90);
+                require(amount < 2 ** 90, "Amount is greater than 2^90");
 
                 // Enforce minimum cap
-                require(amount >= MinimumCap);
+                require(amount >= MinimumCap, "Amount is below minimum cap");
 
                 // Check that investor passed KYC
                 Universe universe = Universe(_neuFundUniverse);
                 IIdentityRegistry ir = IIdentityRegistry(universe.identityRegistry());
                 IdentityClaims memory investorStatus = deserializeClaims(ir.getClaims(wallet));
-                require(investorStatus.isVerified && !investorStatus.accountFrozen);
+                require(investorStatus.isVerified && !investorStatus.accountFrozen, "KYC Error");
 
                 // Calculate and validate resulting amount
                 // wallet is investor address
                 Contribution storage cont = _contributions[wallet];
                 uint256 newAmount = cont.AmountReceived + amount;
-                require(newAmount < 2 ** 90);
+                require(newAmount < 2 ** 90, "New amount is greater than 2^90");
 
                 // Update contribution
                 _batchContributors.push(wallet);
@@ -205,7 +207,6 @@ contract InvestmentPool is
         {
             _totalEquityReward += amount;
         }
-        */
     }
 
     /**

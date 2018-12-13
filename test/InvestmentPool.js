@@ -22,10 +22,21 @@ function toBytes32(hexOrNumber) {
 async function expectToRevert(func) {
   try {
     await func();
+    throw(Error("Call did not revert"));
   } catch (error) {
     if (!error.toString().includes(VMException))
       throw(error);
   }
+}
+
+async function transferToken(tokenObj, fromAddr, toAddr, amount) {
+  var senderBalance1 = web3.toBigNumber(await tokenObj.balanceOf(fromAddr));
+  var receiverBalance1 = web3.toBigNumber(await tokenObj.balanceOf(toAddr));
+  await tokenObj.transfer["address,uint256,bytes"](toAddr, amount, '', {from: fromAddr, gas: 1000000});
+  var senderBalance2 = web3.toBigNumber(await tokenObj.balanceOf(fromAddr));
+  var receiverBalance2 = web3.toBigNumber(await tokenObj.balanceOf(toAddr));
+  senderBalance1.minus(senderBalance2).should.be.bignumber.equal(amount);
+  receiverBalance2.minus(receiverBalance1).should.be.bignumber.equal(amount);
 }
 
 contract('InvestmentPool', function (accounts) {
@@ -46,6 +57,7 @@ contract('InvestmentPool', function (accounts) {
     'ETOInPayoutState': ETO_STATE_PAYOUT,
     'ETOInRefundState': ETO_STATE_REFUND
   };
+  const KNOWN_INTERFACE_COMMITMENT = 0xfa0e0c60;
   let etos = {}; // ETOs in all states
   let universeAddr;
   let ips = {}; // IPs with ETOs in all states
@@ -105,13 +117,18 @@ contract('InvestmentPool', function (accounts) {
 
       // Register goodInvestor address in KYC
       const newClaims = toBytes32("0x7");
-      const oldClaims = await idRegistry.getClaims(goodInvestor);
+      var oldClaims = await idRegistry.getClaims(goodInvestor);
       await idRegistry.setClaims(goodInvestor, oldClaims, newClaims, {from: owner});
 
       // Register IP addresses in KYC
       for (var state in ips) {
-        const oldClaims = await idRegistry.getClaims(ips[state].address);
+        oldClaims = await idRegistry.getClaims(ips[state].address);
         await idRegistry.setClaims(ips[state].address, oldClaims, newClaims, {from: owner});
+      }
+
+      // Register IP addresses in Universe as ICommitment interface
+      for (var state in ips) {
+        await universe.setCollectionInterface(KNOWN_INTERFACE_COMMITMENT, ips[state].address, true, {from: owner, gas: 1000000});
       }
 
       // Buy some EUR-T for investors
@@ -131,10 +148,16 @@ contract('InvestmentPool', function (accounts) {
       tokenController = tokenControllerFactory.at(tokenControllerAddress);
 
       // Allow transfers to IPs
+      var oldClaims;
       for (var state in ips) {
-        const oldClaims = await idRegistry.getClaims(ips[state].address);
+        oldClaims = await idRegistry.getClaims(ips[state].address);
         await tokenController.setAllowedTransferTo(ips[state].address, true, {from: owner});
       }
+
+      // Allow Transfers from goodInvestor
+      oldClaims = await idRegistry.getClaims(goodInvestor);
+      await tokenController.setAllowedTransferFrom(goodInvestor, true, {from: owner});
+
     });
 
     describe('Pre-condition Tests', async() => {
@@ -180,38 +203,58 @@ contract('InvestmentPool', function (accounts) {
       describe('IP only accepts contributions if ETO is in public state', async() => {
         it('Negative test. Send EUR-T to IP while it is in Setup state', async () => {
           await expectToRevert(async () => {
-            await euroToken.transfer(ips[ETO_STATE_SETUP].address, EUR_100, {from: goodInvestor});
+            await transferToken(euroToken, goodInvestor, ips[ETO_STATE_SETUP].address, EUR_100);
           });
         });
         it('Negative test. Send EUR-T to IP while it is in Whitelist state', async () => {
           await expectToRevert(async () => {
-            await euroToken.transfer(ips[ETO_STATE_WHITELIST].address, EUR_100, {from: goodInvestor});
+            await transferToken(euroToken, goodInvestor, ips[ETO_STATE_WHITELIST].address, EUR_100);
           });
         });
         it('Positive test. Send EUR-T to IP while it is in Public state', async () => {
-          await euroToken.transfer(ips[ETO_STATE_PUBLIC].address, EUR_100, {from: goodInvestor});
+          await transferToken(euroToken, goodInvestor, ips[ETO_STATE_PUBLIC].address, EUR_100);
         });
         it('Negative test. Send EUR-T to IP while it is in Signing state', async () => {
           await expectToRevert(async () => {
-            await euroToken.transfer(ips[ETO_STATE_SIGNING].address, EUR_100, {from: goodInvestor});
+            await transferToken(euroToken, goodInvestor, ips[ETO_STATE_SIGNING].address, EUR_100);
           });
         });
         it('Negative test. Send EUR-T to IP while it is in Claim state', async () => {
           await expectToRevert(async () => {
-            await euroToken.transfer(ips[ETO_STATE_CLAIM].address, EUR_100, {from: goodInvestor});
+            await transferToken(euroToken, goodInvestor, ips[ETO_STATE_CLAIM].address, EUR_100);
           });
         });
         it('Negative test. Send EUR-T to IP while it is in Refund state', async () => {
           await expectToRevert(async () => {
-            await euroToken.transfer(ips[ETO_STATE_REFUND].address, EUR_100, {from: goodInvestor});
+            await transferToken(euroToken, goodInvestor, ips[ETO_STATE_REFUND].address, EUR_100);
           });
         });
         it('Negative test. Send EUR-T to IP while it is in Payout state', async () => {
           await expectToRevert(async () => {
-            await euroToken.transfer(ips[ETO_STATE_PAYOUT].address, EUR_100, {from: goodInvestor});
+            await transferToken(euroToken, goodInvestor, ips[ETO_STATE_PAYOUT].address, EUR_100);
           });
         });
       });
+
+      describe('Only EUR-T token is accepted as contribution', async() => {
+        it('Positive test. Send EUR-T to IP', async () => {
+          await expectToRevert(async () => {
+            await transferToken(euroToken, goodInvestor, ips[ETO_STATE_PUBLIC].address, EUR_100);
+          });
+        });
+        it('Negative test. Send not a EUR-T to IP', async () => {
+          await expectToRevert(async () => {
+
+
+
+            await transferToken(euroToken, goodInvestor, ips[ETO_STATE_PUBLIC].address, EUR_100);
+          });
+        });
+      });
+
+
+
+
     })
 
 
