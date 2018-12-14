@@ -54,10 +54,6 @@ contract InvestmentPool is
     bool private _claimedRewards;
     bool private _claimedRefund;
 
-    event Debug(address value1);
-    event Debug(uint256 value1);
-
-
     /**
     *  Constructor
     *
@@ -149,7 +145,7 @@ contract InvestmentPool is
     function tokenFallback(address wallet, uint256 amount, bytes)
         public
     {
-        emit Debug(amount);
+        uint256 maxAmount = 10**27; // 1 billion Euro
 
         // We should only receive tokens from valid token addresses.
         // 1. In case of contribution: From token, which ETO accepts and which it uses for defining min/max cap
@@ -158,7 +154,7 @@ contract InvestmentPool is
         bool contributionToken = _contributionTokenAddress == msg.sender;
         bool equityToken = _equityTokenAddress == msg.sender;
         bool neumarkToken = _neumarkTokenAddress == msg.sender;
-        require(neumarkToken || equityToken || contributionToken);
+        require(neumarkToken || equityToken || contributionToken, "Wrong Token");
 
         // We received either contribution or refund
         if (contributionToken)
@@ -170,7 +166,7 @@ contract InvestmentPool is
                 require(isContributionAllowed(), "Contribution is not allowed");
 
                 // Input validation
-                require(amount < 2 ** 90, "Amount is greater than 2^90");
+                require(amount < maxAmount, "Amount is greater than 2^90");
 
                 // Enforce minimum cap
                 require(amount >= MinimumCap, "Amount is below minimum cap");
@@ -185,7 +181,7 @@ contract InvestmentPool is
                 // wallet is investor address
                 Contribution storage cont = _contributions[wallet];
                 uint256 newAmount = cont.AmountReceived + amount;
-                require(newAmount < 2 ** 90, "New amount is greater than 2^90");
+                require(newAmount < maxAmount, "New amount is greater than 2^90");
 
                 // Update contribution
                 _batchContributors.push(wallet);
@@ -196,16 +192,6 @@ contract InvestmentPool is
 
             // This is a refund from ETO, just accept balance and do nothing
             //else {}
-        }
-
-        // We received reward from ETO
-        else if (neumarkToken)
-        {
-            _totalNeuReward += amount;
-        }
-        else if (equityToken)
-        {
-            _totalEquityReward += amount;
         }
     }
 
@@ -249,6 +235,9 @@ contract InvestmentPool is
         external
         onlyOwner
     {
+        // Can claim only once
+        require(!_claimedRewards, "Already claimed");
+
         // ETO should be in Claim state
         IETOCommitment etoObject = IETOCommitment(_etoAddress);
         require(etoObject.state() == IETOCommitmentStates.ETOState.Claim);
@@ -256,6 +245,13 @@ contract InvestmentPool is
         // Claim Equity and Neumarks
         etoObject.claim();
         _claimedRewards = true;
+
+        // Record how much NEU and EquityToken we received
+        Neumark neumarkToken = Neumark(_neumarkTokenAddress);
+        EquityToken equityToken = EquityToken(_equityTokenAddress);
+
+        _totalNeuReward = neumarkToken.balanceOf(address(this));
+        _totalEquityReward = equityToken.balanceOf(address(this));
     }
 
     /**
@@ -272,7 +268,7 @@ contract InvestmentPool is
         public
     {
         // Rewards should have been already claimed by IP from ETO
-        require(_claimedRewards);
+        require(_claimedRewards, "IP Owner has not claimed rewards yet");
 
         // Calculate reward amounts
         Contribution storage cont = _contributions[msg.sender];
@@ -280,14 +276,14 @@ contract InvestmentPool is
         uint256 equityReward = proportion(_totalEquityReward, cont.AmountCommitted, _totalContribution);
 
         // Transfer rewards
-        require(!cont.RewardClaimed); // Prevent double claims
+        require(!cont.RewardClaimed, "No double claims!"); // Prevent double claims
         cont.RewardClaimed = true;
 
         Neumark neumarkToken = Neumark(_neumarkTokenAddress);
         EquityToken equityToken = EquityToken(_equityTokenAddress);
 
-        neumarkToken.distribute(msg.sender, nmkReward);
-        equityToken.distributeTokens(msg.sender, equityReward);
+        neumarkToken.transfer(msg.sender, nmkReward, '');
+        equityToken.transfer(msg.sender, equityReward, '');
     }
 
     /**
