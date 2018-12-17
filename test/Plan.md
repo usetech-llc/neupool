@@ -1,60 +1,69 @@
 Investment Pool Test Plan
 =========================
 
+## Legend
 
-## Contract setup
+"." means the group of tests is partially done
+"+" means the test is done (or all tests in a group)
 
-### Check owner address
-### Set commission beneficiary address
-### Set commission beneficiary address to 0 (negative test)
-### Check minimum cap
+## +Contract setup
 
-## ETO In Progress
+### +Check owner address
+### +Set commission beneficiary address
+### +Set commission beneficiary address to 0 (negative test)
+### +Check minimum cap
 
-### IP only accepts contributions if ETO is in public state
-#### Negative test. Send EUR-T to IP while it is in Setup state
-#### Negative test. Send EUR-T to IP while it is in Whitelist state
-#### Positive test. Send EUR-T to IP while it is in Public state
+## .ETO In Progress
 
-### Only EUR-T token is accepted as contribution
+### +IP only accepts contributions if ETO is in public state
+#### +Negative test. Send EUR-T to IP while it is in Setup state
+#### +Negative test. Send EUR-T to IP while it is in Whitelist state
+#### +Positive test. Send EUR-T to IP while it is in Public state
+#### +Negative test. Send EUR-T to IP while it is in Signing state
+#### +Negative test. Send EUR-T to IP while it is in Claim state
+#### +Negative test. Send EUR-T to IP while it is in Refund state
+#### +Negative test. Send EUR-T to IP while it is in Payout state
 
-#### Positive test. Send EUR-T to IP
+### +Only EUR-T token is accepted as contribution
+
+#### +Positive test. Send EUR-T to IP
 ##### Setup
 Approved address
 ETO is in Public state
 
-#### Negative test. Send some other ERC223 token to IP (not NEU or Equity)
+#### +Negative test. Send some other ERC223 token to IP (not NEU or Equity)
 ##### Setup
 Approved address
 ETO is in Public state
 
-### Only NeuFund approved addresses should be allowed to contribute
+### +Only NeuFund approved addresses should be allowed to contribute
 
-#### Positive test. Send EUR-T to IP from approved address
+#### +Positive test. Send EUR-T to IP from approved address
 ##### Setup
 ETO is in Public state
 
-#### Negative test. Send EUR-T to IP from unapproved address
+#### +Negative test. Send EUR-T to IP from unapproved address
 ##### Setup
 ETO is in Public state
 
-### Only contributions greater or equal to minimum cap are allowed
-#### Negative test. Sent EUR-T amount less than IP minimum cap
+### +Only contributions greater or equal to minimum cap are allowed
+#### +Negative test. Sent EUR-T amount less than IP minimum cap
 Verify by calling both getContribution and getSummary methods
-#### Positive test. Sent EUR-T amount equal to IP minimum cap
+#### +Positive test. Sent EUR-T amount equal to IP minimum cap
 Verify by calling both getContribution and getSummary methods
-#### Positive test. Sent EUR-T amount greater than IP minimum cap
+#### +Positive test. Sent EUR-T amount greater than IP minimum cap
 Verify by calling both getContribution and getSummary methods
 
-### Cannot contribute more than 2^90
+### +Cannot contribute more than 2^90
 
-### When batch size is reached, IP Owner should be able to send all received up to date funds to ETO contract
-#### Positive test. Commit when ETO is in Public state
+### +When batch size is reached, IP Owner should be able to send all received up to date funds to ETO contract
+#### +Positive test. Commit when ETO is in Public state
 ##### Setup
 ETO minimum cap is collected in batch
 ##### Verify
 Correct commission is reserved
 Amount less commission is transferred to ETO
+#### +Negative test. Commit as some other address.
 
 ### If ETO is ended because maximum cap is reached, and no more contributions are accepted, IP contract should not accept funds
 #### Setup
@@ -63,15 +72,15 @@ Contribute and commit ETO maximum cap
 IP contract does not accept funds anymore
 
 ## ETO Success
-### IP Contract Claims Rewards
+### +IP Contract Claims Rewards
 Verify that Neumark and Equity tokens are received and amounts are correct
-### Only commission beneficiary can claim commission
-#### Negative test. Claim commissions from non-beneficiary address
-#### Negative test. Claim commissions while ETO is in Public state
+### .Only commission beneficiary can claim commission
+#### +Negative test. Claim commissions from non-beneficiary address
+#### +Negative test. Claim commissions while ETO is in Public state
 #### Negative test. Claim commissions while ETO is in Claim state
-#### Positive test. Claim commissions while ETO is in Payout state
+#### +Positive test. Claim commissions while ETO is in Payout state
 
-### Equity Tokens and NEU are distributed proportionally between contributors
+### +Equity Tokens and NEU are distributed proportionally between contributors
 #### Setup
 ETO is successful (Collected above minimum cap contributions, committed, claimed and received rewards from ETO)
 Contributions were received from contributors as per table:
@@ -83,7 +92,7 @@ Contributions were received from contributors as per table:
 All three contributors can claim and receive Neu and Equity token proportionally to their contribution.
 Contribution claimed flag is set for 1,2,3.
 
-### Negative test. Double claims are prevented.
+### +Negative test. Double claims are prevented.
 Contributors cannot claim second and third time.
 
 ### There should be a way to return contributions in case if Batch Size is not reached by the end of ETO.
